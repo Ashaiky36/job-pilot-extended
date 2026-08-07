@@ -1,24 +1,21 @@
-import google.generativeai as genai
+from google import genai        # Google Gen-AI client library for interacting with Gemini models.    
+from google.genai import types      # types module for creating content parts (like PDF bytes)
 import json
-import base64
 import os
-from pathlib import Path
+from pathlib import Path        # For file-path handling
 from dotenv import load_dotenv
 
 load_dotenv()
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))      # Initialize Gemini client Api from environment variables.
+MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")       # Get model name from env variable.
 
-def parse_resume(pdf_path: str) -> dict:
+
+def parse_resume(pdf_path: str) -> dict:        
     """
     Sends resume PDF to Gemini and extracts structured profile data.
-    Returns a clean dict with skills, experience, education.
     """
-    model = genai.GenerativeModel("gemini-1.5-flash")
-
-    # Read PDF as bytes
-    pdf_bytes = Path(pdf_path).read_bytes()
-    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    pdf_bytes = Path(pdf_path).read_bytes()     # read the reusme.pdf file as bytes
 
     prompt = """Extract the following information from this resume.
 Return ONLY valid JSON with no markdown, no backticks, no explanation.
@@ -57,32 +54,41 @@ Required JSON structure:
 }
 
 If any field is not found, use null for strings and [] for arrays.
-Extract ALL skills mentioned anywhere in the resume including
-from project descriptions and work experience."""
+Extract ALL skills mentioned anywhere including project descriptions."""
 
-    response = model.generate_content([
-        {
-            "mime_type": "application/pdf",
-            "data": pdf_base64
-        },
-        prompt
-    ])
+    # Send request to Gemini model to analyze the PDF and extract info.
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=[
+            types.Part.from_bytes(
+                data=pdf_bytes,
+                mime_type="application/pdf"
+            ),
+            prompt
+        ]
+    )
 
-    # Clean and parse response
+    # Get the response text and remove any whitespace from start/end
     text = response.text.strip()
+    # Remove any markdown code block markers that might wrap the JSON
     text = text.replace("```json", "").replace("```", "").strip()
 
-    profile = json.loads(text)
-    return profile
+    try:
+        # Parse the cleaned text into a Python dictionary using JSON
+        profile = json.loads(text)
+    except json.JSONDecodeError:
+        # If JSON parsing fails, print warning with first 500 chars of response
+        print(f"[Warning] JSON parse failed. Raw response:\n{text[:500]}")
+        # Return empty dictionary as fallback
+        profile = {}
+
+    return profile      # return the parsed profile dictionary.
 
 
 def extract_job_requirements(jd_text: str) -> dict:
     """
-    Extracts structured requirements from a raw job description.
-    Returns clean dict with required skills, experience, etc.
+    Extracts structured requirements from raw job description text.
     """
-    model = genai.GenerativeModel("gemini-1.5-flash")
-
     prompt = f"""Extract structured information from this job description.
 Return ONLY valid JSON with no markdown, no backticks, no explanation.
 
@@ -106,34 +112,41 @@ Required JSON structure:
 Job Description:
 {jd_text}
 
-Extract ALL technical skills, tools, frameworks, and technologies mentioned.
-Separate required from preferred/nice-to-have skills.
-If salary is not mentioned use null."""
+Extract ALL technical skills, tools, frameworks mentioned.
+Separate required from preferred skills.
+Use null for salary if not mentioned."""
 
-    response = model.generate_content(prompt)
+    # Send request to Gemini with just the prompt(no files needed)
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=prompt
+    )
+
+    # Cleaning the response by removing whitespce
     text = response.text.strip()
+    # Remove any markdown code block markers
     text = text.replace("```json", "").replace("```", "").strip()
 
-    requirements = json.loads(text)
+    try:
+        # Parse cleaned text into Python dictionary
+        requirements = json.loads(text)
+    except json.JSONDecodeError:
+        print(f"[Warning] JSON parse failed. Raw response:\n{text[:500]}")
+        requirements = {}
+
     return requirements
 
 
 def calculate_match_score(profile: dict, requirements: dict) -> dict:
     """
-    Calculates match score between resume profile and job requirements.
-    Uses Gemini for semantic matching — catches synonyms like
-    "ML" matching "machine learning", "Py" matching "Python".
-    Returns score and detailed breakdown.
+    Uses Gemini semantic matching to score resume against job.
     """
-    model = genai.GenerativeModel("gemini-1.5-flash")
-
-    prompt = f"""You are a technical recruiter evaluating a candidate for a job.
+    prompt = f"""You are a technical recruiter evaluating a candidate.
 
 CANDIDATE PROFILE:
 Skills: {profile.get("skills", [])}
 Experience: {profile.get("experience_years", 0)} years
-Projects: {[p.get("name") for p in profile.get("projects", [])]}
-Technologies used in projects: {[t for p in profile.get("projects", []) for t in p.get("technologies", [])]}
+Project technologies: {[t for p in profile.get("projects", []) for t in p.get("technologies", [])]}
 
 JOB REQUIREMENTS:
 Required Skills: {requirements.get("required_skills", [])}
@@ -157,22 +170,33 @@ Return ONLY valid JSON with no markdown:
         "overall": 75
     }},
     "recommendation": "Strong match. Apply immediately.",
-    "improvement_suggestions": ["Learn Docker", "Add SQL projects to portfolio"]
+    "improvement_suggestions": ["Learn Docker", "Add SQL projects"]
 }}
 
-Be semantic in matching — Python matches py, ML matches machine learning,
-NLP matches natural language processing."""
+Use semantic matching — PyTorch matches deep learning frameworks,
+pandas matches python libraries, SQL matches database querying."""
 
-    response = model.generate_content(prompt)
+    # Send request to Gemini to calculate match score
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=prompt
+    )
+
+    # Clean the response text
     text = response.text.strip()
     text = text.replace("```json", "").replace("```", "").strip()
 
-    match_result = json.loads(text)
+    try:
+        # Parse JSON response into Python dictionary
+        match_result = json.loads(text)
+    except json.JSONDecodeError:
+        print(f"[Warning] JSON parse failed. Raw response:\n{text[:500]}")
+        match_result = {"match_score": 0}
+
     return match_result
 
-
+# This block executes only when the script is run directly (not imported)
 if __name__ == "__main__":
-    # Test with a sample resume
     import sys
 
     if len(sys.argv) < 2:
@@ -182,13 +206,14 @@ if __name__ == "__main__":
     pdf_path = sys.argv[1]
 
     print("Parsing resume...")
-    profile = parse_resume(pdf_path)
-    print(f"Name: {profile.get('name')}")
+    profile = parse_resume(pdf_path)    # Call parse_resume function with PDF path
+    print(f"\nName: {profile.get('name')}")
     print(f"Skills found: {len(profile.get('skills', []))}")
     print(f"Skills: {profile.get('skills', [])}")
     print(f"Experience: {profile.get('experience_years')} years")
+    print(f"Projects: {[p.get('name') for p in profile.get('projects', [])]}")
 
-    # Test with a sample JD
+    print("\n--- Testing JD Extraction ---")
     sample_jd = """
     We are looking for a Data Analyst with 1-3 years of experience.
     Required: Python, SQL, Excel, Power BI or Tableau
@@ -197,12 +222,14 @@ if __name__ == "__main__":
     You will analyze business data, create dashboards, and present insights.
     """
 
-    print("\nExtracting job requirements...")
     requirements = extract_job_requirements(sample_jd)
     print(f"Required skills: {requirements.get('required_skills')}")
+    print(f"Preferred skills: {requirements.get('preferred_skills')}")
 
-    print("\nCalculating match score...")
+    print("\n--- Testing Match Score ---")
     match = calculate_match_score(profile, requirements)
     print(f"Match score: {match.get('match_score')}")
+    print(f"Matched skills: {match.get('matched_skills')}")
     print(f"Missing skills: {match.get('missing_required_skills')}")
     print(f"Recommendation: {match.get('recommendation')}")
+    print(f"Suggestions: {match.get('improvement_suggestions')}")

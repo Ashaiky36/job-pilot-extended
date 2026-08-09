@@ -118,3 +118,67 @@ def fetch_indeed_rss(
     except Exception as e:
         print(f"[Indeed] Error fetching jobs: {e}")    # Log any errors that occur during the fetch process
         return []    # Return an empty list in case of an error
+
+# function to fetch jobs from adzuna API
+def fetch_adzuna(
+    query: str = "data_analyst",     # Default search query for Adzuna
+    location: str = "India",     # Default location for job search
+    api_id: str = "",     # Adzuna API ID (replace with your actual API ID)
+    api_key: str = ""     # Adzuna API Key (replace with your actual API Key)
+) -> list[dict]:
+    
+    """
+    Fetches jobs from Adzuna API.
+    Free API key at: https://developer.adzuna.com/
+    """
+    if not api_id or not api_key:
+        print("[Adzuna] No API credentials provided, skipping")
+        return []    # Return an empty list if API credentials are not provided
+
+    url = (
+        f"https://api.adzuna.com/v1/api/jobs/in/search/1"       
+        f"?app_id={api_id}"
+        f"&app_key={api_key}"
+        f"&results_per_page=20"
+        f"&what={query.replace(' ', '+')}"
+        f"&where={location.replace(' ', '+')}"
+        f"&sort_by=date"
+    )
+
+    try:
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+
+        jobs = [] 
+        for job in data.get("results", []):
+            job_url = job.get("redirect_url", "")
+            if not job_url:
+                continue
+
+            jobs.append({
+                "job_id": make_job_id(job_url),
+                "title": job.get("title", ""),
+                "company": job.get("company", {}).get("display_name", ""),
+                "location": job.get("location", {}).get("display_name", ""),
+                "url": job_url,
+                "description": job.get("description", ""),
+                "source": "adzuna",
+                "posted_at": job.get("created", ""),
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "salary_range": (
+                    f"{job.get('salary_min', '')}-"
+                    f"{job.get('salary_max', '')}"
+                    if job.get("salary_min") else ""
+                ),
+                "job_type": job.get("contract_time", "full-time")
+            })
+
+            print(f"[Adzuna] Fetched {len(jobs)} jobs")
+            return jobs
+
+    except Exception as e:
+        print(f"[Adzuna] Error: {e}")   
+        return []
+
+        

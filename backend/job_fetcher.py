@@ -4,18 +4,53 @@ import feedparser   # for parsing RSS feeds
 from datetime import datetime, timezone   # for handling date and time
 from typing import List, Dict, Optional   # for type hinting
 import time         # for adding delays between requests
+import re     
+import os  
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# All roles you are targeting
+TARGET_KEYWORDS = [
+    "data analyst",
+    "data scientist",
+    "machine learning engineer",
+    "ML engineer",
+    "AI engineer",
+    "business analyst",
+    "data engineer",
+    "NLP engineer",
+    "deep learning engineer",
+    "analytics engineer"
+]
+
+TARGET_LOCATIONS = ["India", "Remote"]
 
 # function to generate a unique job ID based on the job URL
 def make_job_id(url: str) -> str:
     """Creates unique hash for any job URL."""
     return hashlib.md5(url.encode()).hexdigest()    # Generate a unique hash for the job URL using MD5 hashing algorithm.
 
+# Funtion to clean the html tags and clean whitespace
+def clean_html(text: str) -> str:
+
+    """Remove HTML tags and clean whitespace."""
+
+    if not text:
+        return ""
+    
+    soup = BeautifulSoup(text, "html.parser")
+    clean = soup.get_text(separator=" ", strip=True)
+    clean = re.sub(r'\s+', ' ', clean).strip()
+    return clean
+
 # function to fetch job postings from remoteok
-def fetch_remoteok(keywords: List[str] = None) -> List[dict]:
+def fetch_remoteok(keywords: list[str] = None) -> list[dict]:
 
     """Fetches job postings from remoteok.io public API based on keywords and optional location."""
 
-    url = "https://remoteok.io/api"      # URL for the RemoteOK API
+    url = "https://remoteok.com/api"      # URL for the RemoteOK API
     headers = {"User-Agent": "JobPilot/1.0 job-search-tool"}     # Set a custom User-Agent header to identify the request source
 
     try:
@@ -49,7 +84,7 @@ def fetch_remoteok(keywords: List[str] = None) -> List[dict]:
                 "location": job.get('location', 'Remote'),    # Job location
                 "url": job_url,    # Job URL
                 "source": "remoteok",   # Source of the job posting
-                "posted_at": datetime.now(timezone.utc).isoformat(),    # Date posted in ISO format
+                "posted_at": datetime.fromtimestamp(job.get("epoch", time.time()), tz = timezone.utc).isoformat(),    # Date posted in ISO format
                 "fetched_at": datetime.now(timezone.utc).isoformat(),   # Date fetched in ISO format
                 "salary_range": job.get('salary', ''),    # Salary range if available
                 "job_type": job.get('job_type', 'remote')     # Job type (e.g., full-time, part-time)
@@ -64,9 +99,9 @@ def fetch_remoteok(keywords: List[str] = None) -> List[dict]:
 
 # function to fetch job postings from indeed rss feed
 def fetch_indeed_rss(
-        query: str = "data analyst",     # Default search query for Indeed
-        location: str = "India",     # Default location for job search
-        days_back: int = 1       # Default number of days back for job search
+    query: str,     # search query for Indeed
+    location: str = "India",     # Default location for job search
+    days_back: int = 1       # Default number of days back for job search
 ) -> list[dict]:
     """
     Fetches jobs from Indeed RSS feed.
@@ -104,7 +139,7 @@ def fetch_indeed_rss(
                 "company": entry.get('source', {}).get('title', 'Unknown'),        # Company name (author) from the RSS entry
                 "location": location,       # Location is set to the provided location parameter
                 "url": job_url,        # Job URL
-                "description": entry.get("summary", ""),      # Job description from the RSS entry
+                "description": clean_html(entry.get("summary", "")),      # Job description from the RSS entry
                 "source": "indeed",       # Source of the job posting
                 "posted_at": posted_at,     # Date posted in ISO format
                 "fetched_at": datetime.now(timezone.utc).isoformat(),     # Date fetched in ISO format (current time)
@@ -121,19 +156,21 @@ def fetch_indeed_rss(
 
 # function to fetch jobs from adzuna API
 def fetch_adzuna(
-    query: str = "data_analyst",     # Default search query for Adzuna
+    query: str,     # search query for Adzuna
     location: str = "India",     # Default location for job search
-    api_id: str = "",     # Adzuna API ID (replace with your actual API ID)
-    api_key: str = ""     # Adzuna API Key (replace with your actual API Key)
+    page: int = 1
 ) -> list[dict]:
     
     """
     Fetches jobs from Adzuna API.
     Free API key at: https://developer.adzuna.com/
     """
+    api_id = os.getenv("ADZUNA_APP_ID", "")
+    api_key = os.getenv("ADZUNA_APP_KEY", "")
+
     if not api_id or not api_key:
-        print("[Adzuna] No API credentials provided, skipping")
-        return []    # Return an empty list if API credentials are not provided
+        print("[Adzuna] No API credentials provided in .env, skipping")
+        return []      # Return an empty list if API credentials are not provided
 
     url = (
         f"https://api.adzuna.com/v1/api/jobs/in/search/1"       
@@ -143,6 +180,7 @@ def fetch_adzuna(
         f"&what={query.replace(' ', '+')}"
         f"&where={location.replace(' ', '+')}"
         f"&sort_by=date"
+        f"&max_days_old=1"
     )
 
     try:
@@ -156,29 +194,94 @@ def fetch_adzuna(
             if not job_url:
                 continue
 
+            salary_min = job.get("salary_min")
+            salary_max = job.get("salary_max")
+            salary = (
+                f"₹{salary_min:,.0f} - ₹{salary_max:,.0f}"
+                if salary_min and salary_max else ""
+            )
+
             jobs.append({
                 "job_id": make_job_id(job_url),
                 "title": job.get("title", ""),
                 "company": job.get("company", {}).get("display_name", ""),
                 "location": job.get("location", {}).get("display_name", ""),
                 "url": job_url,
-                "description": job.get("description", ""),
+                "description": clean_html(job.get("description", "")),
                 "source": "adzuna",
                 "posted_at": job.get("created", ""),
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
-                "salary_range": (
-                    f"{job.get('salary_min', '')}-"
-                    f"{job.get('salary_max', '')}"
-                    if job.get("salary_min") else ""
-                ),
+                "salary_range": salary,
                 "job_type": job.get("contract_time", "full-time")
             })
 
-            print(f"[Adzuna] Fetched {len(jobs)} jobs")
+            print(f"[Adzuna] '{query}': {len(jobs)} jobs")
             return jobs
 
     except Exception as e:
         print(f"[Adzuna] Error: {e}")   
         return []
 
-        
+# function to fetch all the jobs as listed above
+def fetch_all_jobs() -> list[dict]:
+    """
+    Fetches from all sources and combines results.
+    Deduplicates by job_id hash.
+    """
+
+    print(f"\n[Fetcher] Starting job fetch for {len(TARGET_KEYWORDS)} roles")
+    print(f"[Fetcher] Locations: {TARGET_LOCATIONS}")
+    print("-" * 50)
+
+    all_jobs = []       # Empty list which will store all the jobs fetched from the respected platforms.
+
+    # Fetch from each source
+    all_jobs.extend(fetch_remoteok(keywords=TARGET_KEYWORDS))
+    time.sleep(2)       # Be polite between requests
+
+    # Indeed - one call per keyword per location
+    for keyword in TARGET_KEYWORDS[:5]:     # Limit to avoid rate limiting
+        for location in TARGET_LOCATIONS:
+            all_jobs.extend(fetch_indeed_rss(
+                query=keyword,
+                location=location,
+                days_back=1
+            ))
+            time.sleep(1)
+
+    # Adzuna - one call per keyword
+    for keyword in TARGET_KEYWORDS[:5]:
+        all_jobs.extend(fetch_adzuna(query=keyword))
+        time.sleep(1)
+
+    # Deduplicate by job_id
+    seen = set()
+    unique_jobs = []
+    for job in all_jobs:
+        if job["job_id"] not in seen:
+            seen.add(job["job_id"])
+            unique_jobs.append(job)
+
+    duplicates_removed = len(all_jobs) - len(unique_jobs)
+
+    print(f"\n[Fetcher] Raw jobs collected: {len(all_jobs)}")
+    print(f"[Fetcher] Duplicates removed: {duplicates_removed}")
+    print(f"[Fetcher] Unique jobs: {len(unique_jobs)}")
+
+    return unique_jobs
+
+if __name__ == "__main__":
+    jobs = fetch_all_jobs()
+
+    print(f"\n{'='*50}")
+    print("SAMPLE JOBS:")
+    print('='*50)
+
+    for job in jobs[:5]:
+        print(f"\nTitle:   {job['title']}")
+        print(f"Company: {job['company']}")
+        print(f"Location:{job['location']}")
+        print(f"Source:  {job['source']}")
+        print(f"URL:     {job['url'][:70]}...")
+        desc_preview = job['description'][:150] if job['description'] else "No description"
+        print(f"Preview: {desc_preview}...")

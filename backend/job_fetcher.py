@@ -61,3 +61,60 @@ def fetch_remoteok(keywords: List[str] = None) -> List[dict]:
     except Exception as e:
         print(f"[RemoteOK] Error fetching jobs: {e}")    # Log any errors that occur during the fetch process
         return []    # Return an empty list in case of an error
+
+# function to fetch job postings from indeed rss feed
+def fetch_indeed_rss(
+        query: str = "data analyst",     # Default search query for Indeed
+        location: str = "India",     # Default location for job search
+        days_back: int = 1       # Default number of days back for job search
+) -> list[dict]:
+    """
+    Fetches jobs from Indeed RSS feed.
+    No API key needed.
+    """
+    rss_url = (
+        f"https://www.indeed.com/rss?"      # Construct the RSS feed URL for Indeed based on the provided query, location, and days_back parameters
+        f"q={query.replace(' ', '+')}&"     # Replace spaces in the query with '+' for URL encoding
+        f"&l={location.replace(' ', '+')}"      # Replace spaces in the location with '+' for URL encoding
+        f"&fromage={days_back}"     # Filter jobs posted within the last 'days_back' days
+        f"&sort=date"       # Sort the results by date to get the most recent job postings first
+    )
+
+    try:
+        feed = feedparser.parse(rss_url)      # Parse the RSS feed using feedparser
+        jobs = []    # Initialize an empty list to store the fetched jobs
+
+        for entry in feed.entries:
+            job_url = entry.get("link", "")    # Get the job URL from the RSS entry
+
+            if not job_url:
+                continue    # Skip entries without a job URL
+            # Parse published date
+            published = entry.get("published", "")    # Get the published date from the RSS entry
+            try:
+                from email.utils import parsedate_to_datetime        # Import function to parse date strings into datetime objects
+                posted_at = parsedate_to_datetime(published).isoformat()       # Convert the published date to ISO format, or use the current time if not available
+
+            except Exception:
+                posted_at = datetime.now(timezone.utc).isoformat()    # Use current time if published date is invalid
+
+            jobs.append({
+                "job_id": make_job_id(job_url),        # Unique job ID
+                "title": entry.get("title", ""),      # Job title from the RSS entry
+                "company": entry.get('source', {}).get('title', 'Unknown'),        # Company name (author) from the RSS entry
+                "location": location,       # Location is set to the provided location parameter
+                "url": job_url,        # Job URL
+                "description": entry.get("summary", ""),      # Job description from the RSS entry
+                "source": "indeed",       # Source of the job posting
+                "posted_at": posted_at,     # Date posted in ISO format
+                "fetched_at": datetime.now(timezone.utc).isoformat(),     # Date fetched in ISO format (current time)
+                "salary_range": "",       # Salary range is not available in the RSS feed
+                "job_type": "full-time"         # Job type is not available in the RSS feed
+            })
+
+        print(f"[Indeed] Fetched {len(jobs)} jobs for {query} in {location}.")    # Log the number of jobs fetched
+        return jobs    # Return the list of fetched jobs
+
+    except Exception as e:
+        print(f"[Indeed] Error fetching jobs: {e}")    # Log any errors that occur during the fetch process
+        return []    # Return an empty list in case of an error

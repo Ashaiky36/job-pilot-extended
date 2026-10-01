@@ -1,3 +1,5 @@
+# python backend/resume_parser.py .\assets\Mohd_Sami_DataAnalyst_Resume.pdf     -- runnable script to test resume parsing, job description extraction, and match scoring.
+
 from google import genai        # Google Gen-AI client library for interacting with Gemini models.    
 from google.genai import types      # types module for creating content parts (like PDF bytes)
 import json

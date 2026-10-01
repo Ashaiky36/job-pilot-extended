@@ -27,6 +27,40 @@ TARGET_KEYWORDS = [
 
 TARGET_LOCATIONS = ["India", "Remote"]
 
+# Target company career pages to monitor
+CAREER_PAGES = [
+    {
+        "company": "Zepto",
+        "url": "https://zepto.com/careers",
+        "job_selector": "a[href*='job']",
+        "base_url": "https://zepto.com"
+    },
+    {
+        "company": "Razorpay",
+        "url": "https://razorpay.com/jobs/",
+        "job_selector": "a[href*='job']",
+        "base_url": "https://razorpay.com"
+    },
+    {
+        "company": "CRED",
+        "url": "https://careers.cred.club/",
+        "job_selector": "a[href*='job']",
+        "base_url": "https://careers.cred.club"
+    },
+    {
+        "company": "Groww",
+        "url": "https://groww.in/careers",
+        "job_selector": "a[href*='job']",
+        "base_url": "https://groww.in"
+    },
+    {
+        "company": "PhonePe",
+        "url": "https://www.phonepe.com/careers/",
+        "job_selector": "a[href*='job']",
+        "base_url": "https://www.phonepe.com"
+    },
+]
+
 # function to generate a unique job ID based on the job URL
 def make_job_id(url: str) -> str:
     """Creates unique hash for any job URL."""
@@ -42,18 +76,25 @@ def clean_html(text: str) -> str:
     
     soup = BeautifulSoup(text, "html.parser")
     clean = soup.get_text(separator=" ", strip=True)
-    clean = re.sub(r'\s+', ' ', clean).strip()
-    return clean
+    return re.sub(r'\s+', ' ', clean).strip()
 
+def is_relevant(title: str, keywords: list[str]) -> bool:
+    title_lower = title.lower()
+    return any(kw.lower() in title_lower for kw in keywords)
+     
+# ----- SOURCE 1: RemoteOK -----
 # function to fetch job postings from remoteok
 def fetch_remoteok(keywords: list[str] = None) -> list[dict]:
 
     """Fetches job postings from remoteok.io public API based on keywords and optional location."""
 
     url = "https://remoteok.com/api"      # URL for the RemoteOK API
-    headers = {"User-Agent": "JobPilot/1.0 job-search-tool"}     # Set a custom User-Agent header to identify the request source
+    headers = {"User-Agent": "Mozilla/5.0 JobPilot/1.0",
+               "Accept": "application/json"
+    }     # Set a custom User-Agent header to identify the request source
 
     try:
+        time.sleep(2)       # RemoteOK requires delay
         response = requests.get(url, headers=headers, timeout=15)      # Make a GET request to the RemoteOK API
         response.raise_for_status()       # Raise an error for bad responses (4xx or 5xx)
         data = response.json()        # Parse the JSON response(for example, [{"position": "Python Developer", "company": "TechCorp", "location": "Remote", "url": "https://remoteok.io/remote-jobs/12345", "tags": ["Python", "Django"], "salary": "$80k-$100k", "job_type": "full-time"}, ...])
@@ -67,10 +108,8 @@ def fetch_remoteok(keywords: list[str] = None) -> list[dict]:
             # Filter jobs based on keywords if provided
             title = job.get('position', '').lower()    # Get the job title in lowercase for case-insensitive comparison
             tags = " ".join(job.get('tags', [])).lower()    # Join job tags into a single string in lowerc ase for comparison, for ex - "python django flask" for a job with tags ["Python", "Django", "Flask"]
-            text = f"{title} {tags}"    # Combine title and tags into a single string for keyword matching
 
-            if keywords:        # If keywords are provided, filter jobs based on them
-                if not any(kw.lower() in text for kw in keywords):
+            if not is_relevant(f"{title} {tags}", TARGET_KEYWORDS):
                     continue    # Skip jobs that don't match the keywords
 
             job_url = job.get('url', '')    # Get the job URL
@@ -97,6 +136,7 @@ def fetch_remoteok(keywords: list[str] = None) -> list[dict]:
         print(f"[RemoteOK] Error fetching jobs: {e}")    # Log any errors that occur during the fetch process
         return []    # Return an empty list in case of an error
 
+# ----- SOURCE 2: INDEED RSS FEED -----
 # function to fetch job postings from indeed rss feed
 def fetch_indeed_rss(
     query: str,     # search query for Indeed
@@ -154,12 +194,9 @@ def fetch_indeed_rss(
         print(f"[Indeed] Error fetching jobs: {e}")    # Log any errors that occur during the fetch process
         return []    # Return an empty list in case of an error
 
+# ----- SOURCE 3: ADZUNA API -----
 # function to fetch jobs from adzuna API
-def fetch_adzuna(
-    query: str,     # search query for Adzuna
-    location: str = "India",     # Default location for job search
-    page: int = 1
-) -> list[dict]:
+def fetch_adzuna(query: str) -> list[dict]:    # search query for Adzuna
     
     """
     Fetches jobs from Adzuna API.
@@ -178,7 +215,6 @@ def fetch_adzuna(
         f"&app_key={api_key}"
         f"&results_per_page=20"
         f"&what={query.replace(' ', '+')}"
-        f"&where={location.replace(' ', '+')}"
         f"&sort_by=date"
         f"&max_days_old=1"
     )
@@ -219,8 +255,119 @@ def fetch_adzuna(
             return jobs
 
     except Exception as e:
-        print(f"[Adzuna] Error: {e}")   
+        print(f"[Adzuna] Error for '{query}': {e}")   
         return []
+
+# ----- SOURCE 4: Wellfound (AngelList) -----
+def fetch_wellfound(query: str = "data") -> list[dict]:
+    """
+    Wellfound RSS feed for startup jobs.
+    Best source for startup and early-stage company roles.
+    """
+    url = f"https://wellfound.com/jobs.rss?roles%5B%5D={query.replace(' ', '+')}"
+
+    try:
+        headres = {"User-Agent": "Mozilla/5.0 JobPilot/1.0"}
+        feed = feedparser.parse(url, request_headers=headres)       
+        jobs = []
+
+        for entry in feed.entries:
+            job_url = entry.get("link", "")
+            if not job_url:
+                continue
+
+            title = entry.get("title", "")
+            if not is_relevant(title, TARGET_KEYWORDS):
+                continue
+
+            jobs.append({
+                "job_id": make_job_id(job_url),
+                "title": title,
+                "company": entry.get("author", "Startup"),
+                "location": "Remote/Startup",
+                "url": job_url,
+                "description": clean_html(entry.get("summary", "")),
+                "source": "wellfound",
+                "posted_at": entry.get("published", ""),
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "salary_range": "",
+                "job_type": "full-time"
+            })
+
+        print(f"  [Wellfound] '{query}': {len(jobs)} jobs")
+        return jobs
+
+    except Exception as e:
+        print(f"  [Wellfound] Error: {e}")
+        return []
+
+# ----- SOURCE 5: Internshala -----
+def fetch_internshala(query: str = "data-analyst") -> list[dict]:
+    """
+    Scrapes Internshala for internships and entry-level jobs.
+    Best source for fresher and internship opportunities.
+    """
+    slug = query.lower().replace(" ", "-")
+    url = f"https://internshala.com/internships/{slug}-internship"
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        jobs = []
+        # Internshala internship cards
+        cards = soup.find_all("div", class_="internship_meta")
+
+        for card in cards[:10]:  # Limit to top 10
+            title_tag = card.find("h3", class_="heading_4_5")
+            company_tag = card.find("p", class_="company_name")
+            link_tag = card.find("a", href=True)
+
+            if not title_tag or not link_tag:
+                continue
+
+            title = title_tag.get_text(strip=True)
+            company = company_tag.get_text(strip=True) if company_tag else ""
+            href = link_tag["href"]
+            job_url = (
+                f"https://internshala.com{href}"
+                if href.startswith("/") else href
+            )
+
+            jobs.append({
+                "job_id": make_job_id(job_url),
+                "title": title,
+                "company": company,
+                "location": "India",
+                "url": job_url,
+                "description": f"{title} internship at {company}",
+                "source": "internshala",
+                "posted_at": datetime.now(timezone.utc).isoformat(),
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "salary_range": "",
+                "job_type": "internship"
+            })
+
+        print(f"  [Internshala] '{query}': {len(jobs)} internships")
+        return jobs
+
+    except Exception as e:
+        print(f"  [Internshala] Error: {e}")
+        return []
+
+# ----- SOURCE 6: Career Pages -----
+
+
+
 
 # function to fetch all the jobs as listed above
 def fetch_all_jobs() -> list[dict]:
@@ -283,5 +430,5 @@ if __name__ == "__main__":
         print(f"Location:{job['location']}")
         print(f"Source:  {job['source']}")
         print(f"URL:     {job['url'][:70]}...")
-        desc_preview = job['description'][:150] if job['description'] else "No description"
+        desc_preview = job.get('description', 'No description')[:200]
         print(f"Preview: {desc_preview}...")

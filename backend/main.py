@@ -143,3 +143,171 @@ async def get_jobs(priority: str = None, limit: int = 50):    # the endpoint acc
 @app.get("/stats")
 async def get_stats():      # defines a GET endpoint at "/stats" that retrieves dashboard statistics from the database and returns them as a JSON response.
     return get_dashboard_stats()
+
+@app.post("/apply/{job_id}")        # defines a POST endpoint at "/apply/{job_id}" that applies job applications for a given job ID, saving the application details to the database and returning a success response.
+async def mark_applied(job_id: int, request: ApplyRequest):     # the endpoint accepts a job ID as a path parameter and an ApplyRequest object in the request body, which contains the application status and optional notes. It saves the application details to the database and returns a success response.
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO applications
+            (job_id, profile_id, status, method, applied_at, notes)
+        VALUES (?, 1, ?, 'MANUAL', CURRENT_TIMESTAMP, ?)
+    """, (job_id, request.status, request.notes))
+    conn.commit()
+    conn.close()
+    return {"success": True, "job_id": job_id}
+
+@app.get("/applications")       # defines a GET endpoint at "/applications" that retrieves all job applications from the database and returns them as a JSON response.
+async def get_applications():       # the endpoint fetches all job applications from the database, joining the applications table with the jobs table to include job details such as title, company, URL, and location. The results are ordered by creation date in descending order and converted into a list of dictionaries for easy JSON serialization. It returns a JSON response containing a list of job applications, including details such as application ID, status, method, applied date, notes, job title, company name, job URL, and location.
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT a.id, a.status, a.method, a.applied_at, a.notes,
+               j.title, j.company, j.url, j.location
+        FROM applications a
+        JOIN jobs j ON a.job_id = j.id
+        ORDER BY a.created_at DESC
+    """)
+    apps = [dict(row) for row in cursor.fetchall()]     # fetches all job applications from the database, joining the applications table with the jobs table to include job details such as title, company, URL, and location. The results are ordered by creation date in descending order and converted into a list of dictionaries for easy JSON serialization.
+    conn.close()
+    return {"applications": apps}       # returns a JSON response containing a list of job applications, including details such as application ID, status, method, applied date, notes, job title, company name, job URL, and location. The applications are ordered by creation date in descending order.
+
+@app.post("/companies/add")     # defines a POST endpoint at "/companies/add" that adds a new company to the tracked companies list in the database, saving the company details and returning a success response.
+async def add_company(request: AddCompanyRequest):      # the endpoint accepts an AddCompanyRequest
+    """
+    User adds a company to track.
+    System auto-detects careers URL if not provided.
+    Tests crawlability immediately.
+
+    """
+    name = request.name.strip()     # strips whitespace from the company name
+    careers_url = request.careers_url.strip()     # strips whitespace from the careers URL
+
+    # Auto-detect careers URL if not provided
+    if not careers_url:
+        guesses = [
+            f"https://{name.lower().replace(' ', '')}.com/careers",
+            f"https://{name.lower().replace(' ', '')}.in/careers",
+            f"https://careers.{name.lower().replace(' ', '')}.com",
+        ]
+        for guess in guesses:       # iterates through a list of guessed careers URLs based on the company name, attempting to find a valid URL by making HTTP GET requests to each guess. If a valid URL is found (status code 200), it is set as the careers URL for the company.
+            try:
+                r = requests.get(guess, timeout=5)
+                if r.status_code == 200:
+                    careers_url = guess
+                    break
+            except Exception:
+                continue
+
+    # Test crawlability of the careers URL
+    crawlable = False
+    note = ""
+    jobs_found = 0
+
+    if careers_url:
+        try:
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+                )
+            }
+            response = requests.get(
+                careers_url, headers=headers, timeout=10
+            )
+
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "html.parser")
+                body_text = soup.get_text()
+
+                # Check if it has meaningful content
+                if len(body_text) > 500:
+                    # Look for job-related links
+                    job_links = soup.find_all("a", href=True)
+                    relevant = [
+                        l for l in job_links
+                        if is_relevant_job(l.get_text(strip=True))
+                    ]
+                    jobs_found = len(relevant)
+
+                    if jobs_found > 0:
+                        crawlable = True
+                        note = f"Found {jobs_found} relevant job links"
+                    else:
+                        # Check if JS-rendered
+                        has_react = (
+                            'id="root"' in response.text or
+                            'id="app"' in response.text or
+                            "data-reactroot" in response.text
+                        )
+                        if has_react:
+                            crawlable = False
+                            note = (
+                                "JavaScript-rendered page — "
+                                "cannot auto-fetch. "
+                                "Please visit the careers page manually."
+                            )
+                        else:
+                            crawlable = True
+                            note = "Page accessible but no data roles found currently"
+                else:
+                    crawlable = False
+                    note = "Page returned minimal content — may require login"
+
+            elif response.status_code == 403:
+                crawlable = False
+                note = "Access blocked (403) — this company does not allow automated access"
+            elif response.status_code == 404:
+                crawlable = False
+                note = "Careers page not found — please provide the exact URL"
+            else:
+                crawlable = False
+                note = f"Unexpected response: {response.status_code}"
+
+        except Exception as e:
+            crawlable = False
+            note = f"Could not reach careers page — {str(e)}"
+    else:
+        crawlable = False
+        note = "Could not auto-detect careers URL — please provide it manually"
+
+    # Save to database
+    company_id = save_tracked_company(name, careers_url)
+    update_company_crawl_status(company_id, crawlable, note)
+
+    return {
+        "success": True,
+        "company_id": company_id,
+        "name": name,
+        "careers_url": careers_url,
+        "crawlable": crawlable,
+        "jobs_found": jobs_found,
+        "note": note,
+        "message": (
+            f"✅ {name} is trackable — {jobs_found} relevant jobs found"
+            if crawlable and jobs_found > 0
+            else f"⚠️  {name}: {note}"
+        )
+    }
+
+@app.get("/companies")      
+async def list_companies():
+    return {"companies": get_tracked_companies()}
+
+@app.delete("/companies/{company_id}")
+async def remove_company(company_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM tracked_companies WHERE id = ?", (company_id,)
+    )
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+if __name__ == "__main__":
+    print("[Startup] Initialising database...")
+    init_database()
+    print("[Startup] Ready. Starting server on http://localhost:8000")
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+

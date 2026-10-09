@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JobPilot - AI Job Discovery</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <span class="logo-icon">✈</span>
+                <span class="logo-text">JobPilot</span>
+            </div>
+            <nav class="nav">
+                <button class="nav-btn active" onclick="showTab('dashboard')">Dashboard</button>
+                <button class="nav-btn" onclick="showTab('jobs')">Jobs</button>
+                <button class="nav-btn" onclick="showTab('applications')">Applications</button>
+                <button class="nav-btn" onclick="showTab('companies')">Track Companies</button>
+                <button class="nav-btn" onclick="showTab('resume')">Resume</button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="main">
+
+        <!-- DASHBOARD TAB -->
+        <div id="tab-dashboard" class="tab active">
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="stat-number" id="statTotal">-</div>
+                    <div class="stat-label">Jobs Fetched</div>
+                </div>
+                <div class="stat-card highlight">
+                    <div class="stat-number" id="statHigh">-</div>
+                    <div class="stat-label">High Priority</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="statReview">-</div>
+                    <div class="stat-label">Review</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="statApps">-</div>
+                    <div class="stat-label">Applied</div>
+                </div>
+            </div>
+
+            <div class="action-bar">
+                <button class="btn-primary" onclick="fetchJobs()">
+                    🔍 Fetch New Jobs
+                </button>
+                <button class="btn-secondary" onclick="runMatching()">
+                    🤖 Run AI Matching
+                </button>
+            </div>
+
+            <div class="status-msg" id="statusMsg"></div>
+
+            <div class="section-title">High Priority Jobs</div>
+            <div id="highPriorityList" class="job-list"></div>
+        </div>
+
+        <!-- JOBS TAB -->
+        <div id="tab-jobs" class="tab">
+            <div class="filter-bar">
+                <button class="filter-btn active" onclick="filterJobs('all')">All</button>
+                <button class="filter-btn" onclick="filterJobs('HIGH')">High Priority</button>
+                <button class="filter-btn" onclick="filterJobs('REVIEW')">Review</button>
+            </div>
+            <div id="jobsList" class="job-list"></div>
+        </div>
+
+        <!-- APPLICATIONS TAB -->
+        <div id="tab-applications" class="tab">
+            <div class="section-title">Application Tracker</div>
+            <div id="applicationsList" class="job-list"></div>
+        </div>
+
+        <!-- TRACK COMPANIES TAB -->
+        <div id="tab-companies" class="tab">
+            <div class="section-title">Track Company Career Pages</div>
+            <p class="section-desc">
+                Add companies you want to monitor. JobPilot will check their
+                careers pages and tell you if jobs can be fetched automatically.
+            </p>
+
+            <div class="add-company-form">
+                <input
+                    type="text"
+                    id="companyName"
+                    placeholder="Company name (e.g. Swiggy)"
+                    class="text-input"
+                />
+                <input
+                    type="url"
+                    id="companyCareersUrl"
+                    placeholder="Careers URL (optional - we will try to find it)"
+                    class="text-input"
+                />
+                <button class="btn-primary" onclick="addCompany()">
+                    Add Company
+                </button>
+            </div>
+
+            <div id="addCompanyStatus" class="status-msg"></div>
+            <div id="companiesList" class="companies-list"></div>
+        </div>
+
+        <!-- RESUME TAB -->
+        <div id="tab-resume" class="tab">
+            <div class="section-title">Upload Resume</div>
+            <p class="section-desc">
+                Upload different resume versions for different roles.
+                JobPilot automatically selects the best match for each job.
+            </p>
+
+            <div class="upload-form">
+                <select id="roleType" class="select-input">
+                    <option value="data_analyst">Data Analyst</option>
+                    <option value="data_scientist">Data Scientist</option>
+                    <option value="ml_engineer">ML Engineer / AI Engineer</option>
+                    <option value="data_engineer">Data Engineer</option>
+                </select>
+
+                <div class="upload-box" id="uploadBox">
+                    <input
+                        type="file"
+                        id="resumeFile"
+                        accept=".pdf"
+                        hidden
+                    />
+                    <div class="upload-icon">📄</div>
+                    <div class="upload-text">
+                        Drop your PDF resume here or click to browse
+                    </div>
+                    <button
+                        class="btn-secondary"
+                        onclick="document.getElementById('resumeFile').click()"
+                    >
+                        Choose PDF
+                    </button>
+                </div>
+
+                <div id="uploadStatus" class="status-msg"></div>
+                <div id="resumePreview" class="resume-preview"></div>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,4 +1,5 @@
-import hashlib      # for generating unique job IDs with hashing
+import hashlib
+from pathlib import Path      # for generating unique job IDs with hashing
 import requests     # for making HTTP requests to fetch job postings
 import feedparser   # for parsing RSS feeds
 from datetime import datetime, timezone   # for handling date and time
@@ -8,8 +9,10 @@ import re
 import os  
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")      # Load environment variables from .env file in the project root
+
 
 # All roles you are targeting
 TARGET_KEYWORDS = [

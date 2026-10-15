@@ -9,8 +9,9 @@ from database import (      # used to interact with the database for various ope
 )
 from resume_parser import extract_job_requirements, calculate_match_score      # used to parse resumes and calculate match scores
 from dotenv import load_dotenv      # used to load environment variables from a .env file
+from pathlib import Path      # used to handle file paths in a platform-independent way
 
-load_dotenv()     # Load environment variables from .env file
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")      # Load environment variables from .env file in the project root
 
 # function to get all profiles from the database
 def get_all_profiles() -> list:

@@ -13,6 +13,10 @@ from fastapi.responses import FileResponse      # used for sending files as resp
 from pydantic import BaseModel      # used for data validation and serialization of request and response models in FastAPI.
 from bs4 import BeautifulSoup       # used for parsing and navigating HTML and XML documents, often used for web scraping.
 import uvicorn      # used for running the FastAPI application with an ASGI server, providing high performance and support for asynchronous operations.
+from dotenv import load_dotenv
+from pathlib import Path
+
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")      # Load environment variables from .env file in the project root 
 
 sys.path.append(os.path.dirname(__file__))      # adds the current directory to the Python module search path, allowing for importing modules from the same directory.
 
@@ -72,7 +76,7 @@ async def serve_frontend():     # serves the frontend of the application by chec
 async def health():
     return {"status": "healthy", "stats": get_dashboard_stats()}        # returns a JSON response containing the health status of the API and relevant dashboard statistics, which can be used for monitoring and diagnostics.
 
-@app.post("/upload_resume")      # defines a POST endpoint at "/upload_resume" that accepts a resume file upload, saves the file to the assets directory, and returns the file path as a JSON response.
+@app.post("/upload-resume")      # defines a POST endpoint at "/upload_resume" that accepts a resume file upload, saves the file to the assets directory, and returns the file path as a JSON response.
 async def upload_resume(        # the endpoint accepts a file upload and an optional role type (defaulting to "data_analyst"). It checks if the uploaded file is of a valid type (PDF or DOCX) and raises an HTTP exception if not.
     file: UploadFile = File(...),       # defines the file parameter as an UploadFile object, which represents the uploaded resume file. The File(...) indicates that this parameter is required and must be provided in the request.
     role_type: str = Form(default="data_analyst")
@@ -103,7 +107,7 @@ async def upload_resume(        # the endpoint accepts a file upload and an opti
         raise HTTPException(status_code=500, detail=f"Resume parsing failed: {str(e)}"
         )
 
-@app.post("/fetch_jobs")      # defines a POST endpoint at "/fetch_jobs" that fetches job listings from external sources, filters them based on relevance, saves the relevant jobs to the database, and returns the count of fetched and saved jobs as a JSON response.
+@app.post("/fetch-jobs")      # defines a POST endpoint at "/fetch_jobs" that fetches job listings from external sources, filters them based on relevance, saves the relevant jobs to the database, and returns the count of fetched and saved jobs as a JSON response.
 async def fetch_jobs_endpoint():
     try:
         loop = asyncio.get_event_loop()      # retrieves the current event loop for asynchronous operations. If no event loop is running, it creates a new one. This is necessary for running asynchronous tasks in the FastAPI application.
@@ -117,7 +121,7 @@ async def fetch_jobs_endpoint():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Job fetching failed: {str(e)}")
 
-@app.post("/run_matching")      # defines a POST endpoint at "/run_matching" that runs the matching pipeline for a given profile ID and batch size, returning the count of matched jobs as a JSON response.
+@app.post("/run-matching")      # defines a POST endpoint at "/run_matching" that runs the matching pipeline for a given profile ID and batch size, returning the count of matched jobs as a JSON response.
 async def run_matching(request: RunPipelineRequest):
     try:
         loop = asyncio.get_event_loop()      # retrieves the current event loop for asynchronous operations. If no event loop is running, it creates a new one. This is necessary for running asynchronous tasks in the FastAPI application.

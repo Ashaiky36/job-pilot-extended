@@ -359,9 +359,57 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
+// async function uploadResume(file) {
+//     const roleType = document.getElementById('roleType').value;
+//     setStatus('uploadStatus', `📤 Uploading ${file.name}...`, 'loading');
+
+//     const formData = new FormData();
+//     formData.append('file', file);
+//     formData.append('role_type', roleType);
+
+//     try {
+//         const res = await fetch(`${API}/upload-resume`, {
+//             method: 'POST',
+//             body: formData
+//         });
+//         const data = await res.json();
+
+//         if (data.success) {
+//             setStatus(
+//                 'uploadStatus',
+//                 `✅ Resume uploaded for ${roleType.replace('_', ' ')}`,
+//                 'success'
+//             );
+
+//             const preview = document.getElementById('resumePreview');
+//             preview.classList.add('visible');
+//             preview.innerHTML = `
+//                 <strong>${escHtml(data.name || 'Your Profile')}</strong>
+//                 <div style="margin-top:4px;color:var(--muted);font-size:12px">
+//                     ${data.experience_years} years experience •
+//                     ${data.skills_found} skills found
+//                 </div>
+//                 <div class="skill-list">
+//                     ${(data.skills || []).slice(0, 15).map(s =>
+//                         `<span class="skill-tag">${escHtml(s)}</span>`
+//                     ).join('')}
+//                 </div>
+//             `;
+//         }
+//     } catch (err) {
+//         setStatus('uploadStatus', `❌ Upload failed: ${err.message}`, 'error');
+//     }
+// }
+
+
 async function uploadResume(file) {
     const roleType = document.getElementById('roleType').value;
-    setStatus('uploadStatus', `📤 Uploading ${file.name}...`, 'loading');
+
+    setStatus(
+        'uploadStatus',
+        `📤 Uploading ${file.name}...`,
+        'loading'
+    );
 
     const formData = new FormData();
     formData.append('file', file);
@@ -372,7 +420,19 @@ async function uploadResume(file) {
             method: 'POST',
             body: formData
         });
+
         const data = await res.json();
+
+        // Display errors returned by FastAPI.
+        if (!res.ok) {
+            console.error('Resume upload error:', data);
+            setStatus(
+                'uploadStatus',
+                `❌ ${data.detail || `Upload failed (${res.status})`}`,
+                'error'
+            );
+            return;
+        }
 
         if (data.success) {
             setStatus(
@@ -382,6 +442,7 @@ async function uploadResume(file) {
             );
 
             const preview = document.getElementById('resumePreview');
+
             preview.classList.add('visible');
             preview.innerHTML = `
                 <strong>${escHtml(data.name || 'Your Profile')}</strong>
@@ -397,9 +458,15 @@ async function uploadResume(file) {
             `;
         }
     } catch (err) {
-        setStatus('uploadStatus', `❌ Upload failed: ${err.message}`, 'error');
+        console.error('Upload request failed:', err);
+        setStatus(
+            'uploadStatus',
+            `❌ Upload failed: ${err.message}`,
+            'error'
+        );
     }
 }
+
 
 
 // UTILITIES 

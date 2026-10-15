@@ -7,7 +7,7 @@ import os
 from pathlib import Path        # For file-path handling
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")      # Load environment variables from .env file in the project root
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))      # Initialize Gemini client Api from environment variables.
 MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")       # Get model name from env variable.

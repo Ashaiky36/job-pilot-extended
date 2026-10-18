@@ -10,6 +10,7 @@ from database import (      # used to interact with the database for various ope
 from resume_parser import extract_job_requirements, calculate_match_score      # used to parse resumes and calculate match scores
 from dotenv import load_dotenv      # used to load environment variables from a .env file
 from pathlib import Path      # used to handle file paths in a platform-independent way
+from notifier import send_job_notifications     # used to send job notification via email
 
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")      # Load environment variables from .env file in the project root
 
@@ -114,6 +115,18 @@ def run_matching_pipeline(batch_size: int = 20) -> dict:
         except Exception as e:
             print(f"  🚫 Error: {job.get('title')}: {e}")
             results["errors"] += 1
+
+            # Send notifications for this batch
+        if results["high_priority"] > 0 or results["review"] > 0:
+            # Get the matched jobs for notification
+            from database import get_matches
+            high_jobs = get_matches(priority="HIGH", limit=10)
+            review_jobs = get_matches(priority="REVIEW", limit=5)
+
+            send_job_notifications(
+                high_jobs=high_jobs,
+                review_jobs=review_jobs
+            )
 
     print(f"\n[Matcher] Done: {results}")
     return results

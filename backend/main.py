@@ -298,6 +298,21 @@ async def add_company(request: AddCompanyRequest):      # the endpoint accepts a
 async def list_companies():
     return {"companies": get_tracked_companies()}
 
+@app.post("/send-notifications")
+async def send_notifications_endpoint():
+    """Manually trigger email notifications for current matches."""
+    from notifier import send_job_notifications
+    from database import get_matches
+
+    high_jobs = get_matches(priority="HIGH", limit=10)
+    review_jobs = get_matches(priority="REVIEW", limit=5)
+
+    results = send_job_notifications(
+        high_jobs=high_jobs,
+        review_jobs=review_jobs
+    )
+    return {"success": True, "results": results}
+
 @app.delete("/companies/{company_id}")
 async def remove_company(company_id: int):
     conn = get_connection()

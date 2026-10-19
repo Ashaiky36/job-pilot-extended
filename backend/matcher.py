@@ -11,6 +11,7 @@ from resume_parser import extract_job_requirements, calculate_match_score      #
 from dotenv import load_dotenv      # used to load environment variables from a .env file
 from pathlib import Path      # used to handle file paths in a platform-independent way
 from notifier import send_job_notifications     # used to send job notification via email
+from auto_apply import process_high_priority_jobs
 
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")      # Load environment variables from .env file in the project root
 
@@ -117,19 +118,51 @@ def run_matching_pipeline(batch_size: int = 20) -> dict:
             results["errors"] += 1
 
             # Send notifications for this batch
-        if results["high_priority"] > 0 or results["review"] > 0:
-            # Get the matched jobs for notification
-            from database import get_matches
+        if results["high_priority"] > 0:
+            from database import get_matches, get_connection
+            import json
+
             high_jobs = get_matches(priority="HIGH", limit=10)
             review_jobs = get_matches(priority="REVIEW", limit=5)
 
-            send_job_notifications(
-                high_jobs=high_jobs,
-                review_jobs=review_jobs
+            # Get all profiles for auto-apply
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM profiles")
+            profiles = [dict(row) for row in cursor.fetchall()]
+            conn.close()
+
+            # Parse JSON fields in profiles
+            for p in profiles:
+                for field in ["skills", "experience", "education", "projects"]:
+                    if p.get(field):
+                        try:
+                            p[field] = json.loads(p[field])
+                        except Exception:
+                            p[field] = []
+
+            # Attempt auto-apply for high priority jobs
+            # Get resume PDF path from first profile
+            resume_path = profiles[0].get("pdf_path", "") if profiles else ""
+
+            apply_results = process_high_priority_jobs(
+                high_priority_jobs=high_jobs,
+                profiles=profiles,
+                resume_pdf_path=resume_path
             )
 
-    print(f"\n[Matcher] Done: {results}")
-    return results
+            results["auto_applied"] = apply_results.get("auto_applied", 0)
+            results["notifications_sent"] = apply_results.get("notify_sent", 0)
+
+            # Send review job notifications
+            if results["review"] > 0:
+                from notifier import send_job_notifications
+                send_job_notifications(
+                    high_jobs=[],
+                    review_jobs=review_jobs
+                )
+
+        return results
 
 
 if __name__ == "__main__":

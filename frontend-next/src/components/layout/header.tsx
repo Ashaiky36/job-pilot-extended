@@ -1,12 +1,13 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/lib/auth";
 import { Bell, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
-  "/": { title: "Dashboard", subtitle: "Overview of your job search pipeline" },
+  "/dashboard": { title: "Dashboard", subtitle: "Overview of your job search pipeline" },
   "/jobs": { title: "Job Matches", subtitle: "AI-matched jobs ranked by relevance" },
   "/applications": { title: "Applications", subtitle: "Track your job application status" },
   "/companies": { title: "Companies", subtitle: "Monitor company career pages" },
@@ -15,7 +16,17 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
 
 export function Header() {
   const pathname = usePathname();
-  const page = pageTitles[pathname] || pageTitles["/"];
+  const { user } = useAuth();
+  const page = pageTitles[pathname] || pageTitles["/dashboard"];
+
+  const initials = user?.name
+    ? user.name
+        .split(" ")
+        .map((w) => w[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
+    : "?";
 
   return (
     <header className="sticky top-0 z-30 flex items-center h-14 px-6 border-b border-border bg-background/80 backdrop-blur-md">
@@ -40,7 +51,7 @@ export function Header() {
           <Bell className="w-4 h-4" />
         </Button>
         <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center">
-          <span className="text-[11px] font-semibold text-primary">A</span>
+          <span className="text-[11px] font-semibold text-primary">{initials}</span>
         </div>
       </div>
     </header>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 import {
   LayoutDashboard,
   Briefcase,
@@ -10,10 +11,11 @@ import {
   Building2,
   FileText,
   Plane,
+  LogOut,
 } from "lucide-react";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/jobs", label: "Jobs", icon: Briefcase },
   { href: "/applications", label: "Applications", icon: ClipboardList },
   { href: "/companies", label: "Companies", icon: Building2 },
@@ -22,6 +24,7 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
 
   return (
     <aside className="hidden md:flex flex-col w-[240px] min-h-screen bg-sidebar border-r border-sidebar-border">
@@ -43,7 +46,7 @@ export function Sidebar() {
         {navItems.map((item) => {
           const isActive =
             pathname === item.href ||
-            (item.href !== "/" && pathname.startsWith(item.href));
+            (item.href !== "/dashboard" && pathname.startsWith(item.href));
           return (
             <Link
               key={item.href}
@@ -62,14 +65,25 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom section */}
-      <div className="px-3 pb-4">
-        <div className="rounded-lg bg-sidebar-accent/50 border border-sidebar-border p-3">
-          <p className="text-[11px] text-sidebar-foreground/50 leading-relaxed">
-            AI-powered job discovery
-            <br />& application system
-          </p>
-        </div>
+      {/* User + Logout */}
+      <div className="px-3 pb-4 space-y-2">
+        {user && (
+          <div className="rounded-lg bg-sidebar-accent/50 border border-sidebar-border p-3">
+            <p className="text-[12px] font-medium text-sidebar-foreground truncate">
+              {user.name}
+            </p>
+            <p className="text-[10px] text-sidebar-foreground/50 truncate">
+              {user.email}
+            </p>
+          </div>
+        )}
+        <button
+          onClick={logout}
+          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-[12px] font-medium text-sidebar-foreground/50 hover:text-red-400 hover:bg-sidebar-accent transition-colors"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          Sign Out
+        </button>
       </div>
     </aside>
   );

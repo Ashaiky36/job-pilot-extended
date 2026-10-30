@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 import {
   LayoutDashboard,
   Briefcase,
@@ -11,6 +12,7 @@ import {
   FileText,
   Plane,
   Menu,
+  LogOut,
 } from "lucide-react";
 import {
   Sheet,
@@ -22,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/jobs", label: "Jobs", icon: Briefcase },
   { href: "/applications", label: "Applications", icon: ClipboardList },
   { href: "/companies", label: "Companies", icon: Building2 },
@@ -31,6 +33,7 @@ const navItems = [
 
 export function MobileNav() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
 
   return (
@@ -57,7 +60,7 @@ export function MobileNav() {
             {navItems.map((item) => {
               const isActive =
                 pathname === item.href ||
-                (item.href !== "/" && pathname.startsWith(item.href));
+                (item.href !== "/dashboard" && pathname.startsWith(item.href));
               return (
                 <Link
                   key={item.href}
@@ -76,6 +79,25 @@ export function MobileNav() {
               );
             })}
           </nav>
+          {user && (
+            <div className="px-3 mt-auto pb-4">
+              <div className="rounded-lg bg-sidebar-accent/50 border border-sidebar-border p-3 mb-2">
+                <p className="text-[12px] font-medium text-sidebar-foreground truncate">
+                  {user.name}
+                </p>
+                <p className="text-[10px] text-sidebar-foreground/50 truncate">
+                  {user.email}
+                </p>
+              </div>
+              <button
+                onClick={() => { setOpen(false); logout(); }}
+                className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-[12px] font-medium text-sidebar-foreground/50 hover:text-red-400 hover:bg-sidebar-accent transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Sign Out
+              </button>
+            </div>
+          )}
         </SheetContent>
       </Sheet>
       <div className="flex items-center gap-2 ml-3">

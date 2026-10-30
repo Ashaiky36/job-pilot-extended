@@ -1,5 +1,92 @@
 const API_BASE = "http://localhost:8000";
 
+// ─── Auth Helpers ────────────────────────────────────────────────────
+
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("jobpilot_token");
+}
+
+export function setToken(token: string) {
+  localStorage.setItem("jobpilot_token", token);
+}
+
+export function clearToken() {
+  localStorage.removeItem("jobpilot_token");
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// ─── Auth Types ──────────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: number;
+  email: string;
+  name: string;
+  is_onboarded: number;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  token: string;
+  user: AuthUser;
+}
+
+// ─── Auth API ────────────────────────────────────────────────────────
+
+export async function registerUser(
+  email: string,
+  password: string,
+  name: string
+): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, name }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Registration failed");
+  }
+  return res.json();
+}
+
+export async function loginUser(
+  email: string,
+  password: string
+): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Login failed");
+  }
+  return res.json();
+}
+
+export async function getMe(): Promise<AuthUser> {
+  const res = await fetch(`${API_BASE}/auth/me`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Not authenticated");
+  return res.json();
+}
+
+export async function completeOnboarding(): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/auth/onboarding-complete`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Failed to complete onboarding");
+  return res.json();
+}
+
 // ─── Types ───────────────────────────────────────────────────────────
 export interface DashboardStats {
   total_jobs: number;

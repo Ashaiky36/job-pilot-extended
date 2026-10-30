@@ -101,6 +101,15 @@ def init_database():        # initializes the database by creating all necessary
             added_at    DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS users (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            email           TEXT UNIQUE NOT NULL,
+            password_hash   TEXT NOT NULL,
+            name            TEXT NOT NULL,
+            is_onboarded    INTEGER DEFAULT 0,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE INDEX IF NOT EXISTS idx_jobs_job_id
             ON jobs(job_id);
         CREATE INDEX IF NOT EXISTS idx_jobs_processed
@@ -109,6 +118,8 @@ def init_database():        # initializes the database by creating all necessary
             ON matches(priority);
         CREATE INDEX IF NOT EXISTS idx_matches_score
             ON matches(match_score DESC);
+        CREATE INDEX IF NOT EXISTS idx_users_email
+            ON users(email);
     """)
     conn.commit()       # commits the changes made by the executed SQL script to the database, ensuring that the table structures are saved
     conn.close()        # closes the database connection, releasing any resources associated with it and ensuring that the connection is properly terminated
@@ -403,6 +414,51 @@ def update_company_crawl_status(        # updates the crawlable status and note 
         SET crawlable = ?, note = ?, status = 'CHECKED'
         WHERE id = ?
     """, (1 if crawlable else 0, note, company_id))
+    conn.commit()
+    conn.close()
+
+# ── User Auth Functions ────────────────────────────────────────────────
+
+def create_user(email: str, password_hash: str, name: str) -> int:
+    """Creates a new user and returns their ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO users (email, password_hash, name)
+        VALUES (?, ?, ?)
+    """, (email, password_hash, name))
+    user_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return user_id
+
+def get_user_by_email(email: str) -> dict | None:
+    """Returns user dict or None if not found."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+    return None
+
+def get_user_by_id(user_id: int) -> dict | None:
+    """Returns user dict or None if not found."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+    return None
+
+def mark_user_onboarded(user_id: int):
+    """Marks a user as having completed onboarding."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET is_onboarded = 1 WHERE id = ?", (user_id,))
     conn.commit()
     conn.close()
 

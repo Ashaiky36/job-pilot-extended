@@ -6,7 +6,7 @@ import json
 import asyncio      # used for writing asynchronous code, allowing for concurrent execution of tasks.
 import requests     # used for making HTTP requests to external APIs or services.
 from concurrent.futures import ThreadPoolExecutor       # used for managing a pool of threads to execute tasks concurrently, improving performance for I/O-bound operations.
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form      # used for creating the FastAPI application, handling HTTP exceptions, and managing file uploads and form data.
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Header
 from fastapi.middleware.cors import CORSMiddleware      # used for enabling Cross-Origin Resource Sharing (CORS) to allow requests from different origins.
 from fastapi.staticfiles import StaticFiles     # used for serving static files, such as HTML, CSS, and JavaScript, from a specified directory.
 from fastapi.responses import FileResponse      # used for sending files as responses to client requests.
@@ -20,14 +20,39 @@ load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")      # Load envir
 
 sys.path.append(os.path.dirname(__file__))      # adds the current directory to the Python module search path, allowing for importing modules from the same directory.
 
-from database import (      # used for interacting with the database, including initializing the database, saving profiles and jobs, retrieving unprocessed jobs, getting matches, fetching dashboard statistics, managing connections, and handling tracked companies.
+import bcrypt
+import jwt
+from datetime import datetime, timezone, timedelta
+
+from database import (
     init_database, save_profile, save_jobs, get_unprocessed_jobs, get_matches,
     get_dashboard_stats, get_connection, save_tracked_company, get_tracked_companies,
-    update_company_crawl_status
+    update_company_crawl_status,
+    create_user, get_user_by_email, get_user_by_id, mark_user_onboarded
 )
-from job_fetcher import fetch_all_jobs, is_relevant_job     # used for fetching job listings from external sources and determining if a job is relevant based on certain criteria.
+from job_fetcher import fetch_all_jobs, is_relevant_job
 from resume_parser import parse_resume
 from matcher import run_matching_pipeline
+
+JWT_SECRET = os.getenv("JWT_SECRET", "jobpilot-secret-key-change-in-production")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRY_HOURS = 72
+
+def create_jwt(user_id: int, email: str) -> str:
+    """Creates a JWT token for authenticated users."""
+    payload = {
+        "user_id": user_id,
+        "email": email,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRY_HOURS),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def decode_jwt(token: str) -> dict | None:
+    """Decodes a JWT token. Returns payload dict or None if invalid."""
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return None
 
 app = FastAPI(      # initializes the FastAPI application with metadata such as title, description, and version.
     title = "JobPilot API",
@@ -60,14 +85,93 @@ class ApplyRequest(BaseModel):      # defines a Pydantic model for the request b
     status: str
     notes: str = ""
 
-class AddCompanyRequest(BaseModel):      # defines a Pydantic model for the request body of the /add_company endpoint, containing a single field for the company name.
+class AddCompanyRequest(BaseModel):
     name: str
     careers_url: str = ""
 
-# Now, defining the API endpoints for the FastAPI application.
-@app.get("/")       # defines a GET endpoint at the root URL ("/") that returns a simple JSON message indicating that the JobPilot API is running.
-async def serve_frontend():     # serves the frontend of the application by checking if the index.html file exists in the frontend directory. If it does, it returns the file as a response; otherwise, it returns a JSON message indicating that the JobPilot API is running.
-    index_path = os.path.join(FRONTEND_DIR, "index.html")       # defines the path to the index.html file in the frontend directory, which is used to serve the frontend of the application when a request is made to the root URL ("/").
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+# ── Auth Endpoints ─────────────────────────────────────────────────────
+
+@app.post("/auth/register")
+async def register(req: RegisterRequest):
+    """Register a new user with email and password."""
+    if get_user_by_email(req.email):
+        raise HTTPException(status_code=400, detail="Email already registered")
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    password_hash = bcrypt.hashpw(req.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    user_id = create_user(req.email, password_hash, req.name)
+    token = create_jwt(user_id, req.email)
+    return {
+        "success": True,
+        "token": token,
+        "user": {"id": user_id, "email": req.email, "name": req.name, "is_onboarded": 0},
+    }
+
+@app.post("/auth/login")
+async def login(req: LoginRequest):
+    """Login with email and password."""
+    user = get_user_by_email(req.email)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if not bcrypt.checkpw(req.password.encode("utf-8"), user["password_hash"].encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = create_jwt(user["id"], user["email"])
+    return {
+        "success": True,
+        "token": token,
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "name": user["name"],
+            "is_onboarded": user["is_onboarded"],
+        },
+    }
+
+@app.get("/auth/me")
+async def get_me(authorization: str = Header(default="")):
+    """Get current authenticated user info."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token = authorization.split(" ", 1)[1]
+    payload = decode_jwt(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    user = get_user_by_id(payload["user_id"])
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "name": user["name"],
+        "is_onboarded": user["is_onboarded"],
+    }
+
+@app.post("/auth/onboarding-complete")
+async def onboarding_complete(authorization: str = Header(default="")):
+    """Mark user as having completed onboarding."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token = authorization.split(" ", 1)[1]
+    payload = decode_jwt(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    mark_user_onboarded(payload["user_id"])
+    return {"success": True}
+
+# ── App Endpoints ──────────────────────────────────────────────────────
+
+@app.get("/")
+async def serve_frontend():
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "JobPilot API is running."}
